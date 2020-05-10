@@ -1,0 +1,6 @@
+# Eclipse Files
+.settings
+
+# Build Output
+[dD]ebug/
+[rR]elease/
