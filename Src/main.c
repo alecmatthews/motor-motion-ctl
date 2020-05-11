@@ -25,6 +25,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
+#include "message_parse.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -100,6 +102,10 @@ int main(void) {
 	/* USER CODE BEGIN 2 */
 
 	uint8_t msg[] = "Hello, World!\r\n";
+	char up[] = "UP";
+	char down[] = "DOWN";
+	send_encoder_val = true;
+
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
@@ -108,7 +114,14 @@ int main(void) {
 		/* USER CODE END WHILE */
 
 		uint32_t count = TIM2->CNT;
-		sprintf((char*) msg, "E -> %lu\r\n", count);
+		char* up_down = __HAL_TIM_IS_TIM_COUNTING_DOWN(&htim2) ? down : up;
+
+		if (send_encoder_val) {
+			sprintf((char*) msg, "E -> %lu\r\n", count);
+		}  else {
+			sprintf((char*)msg, "D -> %s\r\n", up_down);
+		}
+
 		size_t l = strlen((char*) msg);
 
 		CDC_Transmit_FS(msg, l);
