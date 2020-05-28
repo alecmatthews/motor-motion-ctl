@@ -9,11 +9,25 @@
 
 #include <stdbool.h>
 
-#include "stm32g4xx_hal.h"
+typedef struct msg {
+	unsigned char len; /* Message length */
+	char id; /* Message identifying character. */
+	long numeric; /* Contains number if the message was numeric. */
+	bool isStop; /* True if messes was stop command. */
+	bool isStart; /* True if message was start command. */
+	bool isSave; /* True if message was save command. */
+} MESSAGE;
 
-bool send_encoder_val;
+/* Since only one message can be processed at a time on an MCU platform
+ * we will make it global. */
+MESSAGE current_message;
+
+/* Setup all memory used by the message processor. This must be called before
+ * any other uses of ParseMessage.
+ */
+void SetupProcessor();
 
 /** Parse new USB messages */
-void ParseMessage(uint8_t* buf, uint32_t* len);
+void ParseMessage(unsigned char *buf, unsigned int *len);
 
 #endif /* MESSAGE_PARSE */

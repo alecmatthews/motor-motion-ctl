@@ -25,7 +25,12 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
+#include <math.h>
+#include <string.h>
+
 #include "message_parse.h"
+#include "message_send.h"
+#include "motion_ctl.h"
 
 /* USER CODE END Includes */
 
@@ -101,10 +106,20 @@ int main(void) {
 	MX_TIM2_Init();
 	/* USER CODE BEGIN 2 */
 
-	uint8_t msg[] = "Hello, World!\r\n";
-	char up[] = "UP";
-	char down[] = "DOWN";
-	send_encoder_val = true;
+	MOTION_PARAMS param;
+	memset(&param, 0, sizeof(MOTION_PARAMS));
+	param.kp = 2;
+	param.ki = 0.125;
+	param.kd = 0;
+	param.max_lim = 359;
+	param.min_lim = 0;
+
+	int expected_val = 180;
+
+	int dir = 0;
+
+	char send_buf[100] = {0};
+	size_t len = 0;
 
 	/* USER CODE END 2 */
 
@@ -113,24 +128,29 @@ int main(void) {
 	while (1) {
 		/* USER CODE END WHILE */
 
-		uint32_t count = TIM2->CNT;
-		char* up_down = __HAL_TIM_IS_TIM_COUNTING_DOWN(&htim2) ? down : up;
+		/* USER CODE BEGIN 3 */
 
-		if (send_encoder_val) {
-			sprintf((char*) msg, "E -> %lu\r\n", count);
-		}  else {
-			sprintf((char*)msg, "D -> %s\r\n", up_down);
+		uint32_t encoder_cnt = TIM2->CNT;
+		float comp = CalculateCompensation((expected_val - encoder_cnt), &param);
+		dir = comp < 0? 1 : 0;
+		comp = fabs(comp);
+		if (comp > param.max_lim) {
+			// outside of max limits
+			comp = param.max_lim;
+		} else if (comp < param.min_lim) {
+			// outside of min limits
+			comp = param.min_lim;
 		}
 
-		size_t l = strlen((char*) msg);
+		uint32_t pwm_set = (uint32_t)round(comp);
 
-		CDC_Transmit_FS(msg, l);
+		sprintf(send_buf, "PWM -> %d; ENC -> %ld; DIR -> %d\r\n", (int)pwm_set, encoder_cnt, dir);
+		len = strlen(send_buf);
+		CDC_Transmit_FS((uint8_t*)send_buf, len);
 
-		__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, count);
+		__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, pwm_set);
 
-		HAL_Delay(800);
-
-		/* USER CODE BEGIN 3 */
+		HAL_Delay(1000);
 	}
 	/* USER CODE END 3 */
 }
@@ -234,7 +254,7 @@ static void MX_TIM1_Init(void) {
 	htim1.Instance = TIM1;
 	htim1.Init.Prescaler = 47;
 	htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-	htim1.Init.Period = 999;
+	htim1.Init.Period = 360-1; // set the period to map directly to the encoder input (0-359).
 	htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
 	htim1.Init.RepetitionCounter = 0;
 	htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -256,7 +276,7 @@ static void MX_TIM1_Init(void) {
 		Error_Handler();
 	}
 	sConfigOC.OCMode = TIM_OCMODE_PWM1;
-	sConfigOC.Pulse = 500;
+	sConfigOC.Pulse = 180; // initially set the duty cycle to 1/2
 	sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
 	sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
 	sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
@@ -285,6 +305,7 @@ static void MX_TIM1_Init(void) {
 	}
 	/* USER CODE BEGIN TIM1_Init 2 */
 
+	/* begin PWM and !PWM on output channel */
 	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
 	HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_1);
 
@@ -313,7 +334,7 @@ static void MX_TIM2_Init(void) {
 	htim2.Instance = TIM2;
 	htim2.Init.Prescaler = 0;
 	htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-	htim2.Init.Period = 999;
+	htim2.Init.Period = 360-1; // Set the auto reload period so the input value can be from 0 to 359
 	htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
 	htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
 	sConfig.EncoderMode = TIM_ENCODERMODE_TI12;
