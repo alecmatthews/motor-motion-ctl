@@ -26,6 +26,7 @@
 /* USER CODE BEGIN Includes */
 
 #include <math.h>
+#include <stdbool.h>
 #include <string.h>
 
 #include "message_parse.h"
@@ -54,6 +55,11 @@ CRC_HandleTypeDef hcrc;
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
 
+bool halt;
+
+MOTION_PARAMS param;
+int expected_val;
+
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -71,6 +77,8 @@ static void MX_TIM2_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+void ProcessMessage(MESSAGE *msg);
+
 /* USER CODE END 0 */
 
 /**
@@ -79,7 +87,7 @@ static void MX_TIM2_Init(void);
  */
 int main(void) {
 	/* USER CODE BEGIN 1 */
-
+	halt = true;
 	/* USER CODE END 1 */
 
 	/* MCU Configuration--------------------------------------------------------*/
@@ -106,20 +114,14 @@ int main(void) {
 	MX_TIM2_Init();
 	/* USER CODE BEGIN 2 */
 
-	MOTION_PARAMS param;
 	memset(&param, 0, sizeof(MOTION_PARAMS));
 	param.kp = 2;
-	param.ki = 0.125;
+	param.ki = 0;
 	param.kd = 0;
 	param.max_lim = 359;
 	param.min_lim = 0;
 
-	int expected_val = 180;
-
-	int dir = 0;
-
-	char send_buf[100] = {0};
-	size_t len = 0;
+	expected_val = 180;
 
 	/* USER CODE END 2 */
 
@@ -131,8 +133,8 @@ int main(void) {
 		/* USER CODE BEGIN 3 */
 
 		uint32_t encoder_cnt = TIM2->CNT;
-		float comp = CalculateCompensation((expected_val - encoder_cnt), &param);
-		dir = comp < 0? 1 : 0;
+		float comp = CalculateCompensation((expected_val - encoder_cnt),
+				&param);
 		comp = fabs(comp);
 		if (comp > param.max_lim) {
 			// outside of max limits
@@ -142,15 +144,22 @@ int main(void) {
 			comp = param.min_lim;
 		}
 
-		uint32_t pwm_set = (uint32_t)round(comp);
 
-		sprintf(send_buf, "PWM -> %d; ENC -> %ld; DIR -> %d\r\n", (int)pwm_set, encoder_cnt, dir);
-		len = strlen(send_buf);
-		CDC_Transmit_FS((uint8_t*)send_buf, len);
+		uint32_t pwm_set = (uint32_t) round(comp);
 
-		__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, pwm_set);
+		if (halt) {
+			__HAL_TIM_DISABLE(&htim1);
+			__HAL_TIM_MOE_DISABLE_UNCONDITIONALLY(&htim1);
+		} else {
+			__HAL_TIM_ENABLE(&htim1);
+			__HAL_TIM_MOE_ENABLE(&htim1);
+			__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, pwm_set);
+		}
 
-		HAL_Delay(1000);
+		if (!current_message.processed)
+			ProcessMessage(&current_message);
+
+		HAL_Delay(500);
 	}
 	/* USER CODE END 3 */
 }
@@ -254,7 +263,7 @@ static void MX_TIM1_Init(void) {
 	htim1.Instance = TIM1;
 	htim1.Init.Prescaler = 47;
 	htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-	htim1.Init.Period = 360-1; // set the period to map directly to the encoder input (0-359).
+	htim1.Init.Period = 360 - 1; // set the period to map directly to the encoder input (0-359).
 	htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
 	htim1.Init.RepetitionCounter = 0;
 	htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -334,7 +343,7 @@ static void MX_TIM2_Init(void) {
 	htim2.Instance = TIM2;
 	htim2.Init.Prescaler = 0;
 	htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-	htim2.Init.Period = 360-1; // Set the auto reload period so the input value can be from 0 to 359
+	htim2.Init.Period = 360 - 1; // Set the auto reload period so the input value can be from 0 to 359
 	htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
 	htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
 	sConfig.EncoderMode = TIM_ENCODERMODE_TI12;
@@ -404,7 +413,50 @@ static void MX_GPIO_Init(void) {
 }
 
 /* USER CODE BEGIN 4 */
+void ProcessMessage(MESSAGE *msg) {
 
+	if (msg->isStop) {
+		halt = true;
+		return;
+	} else if (msg->isStart) {
+		halt = false;
+		return;
+	}
+
+	int len = 0;
+	switch (msg->id) {
+	case 'P': // set p
+		param.kp = msg->numeric / 1000;
+		break;
+	case 'p': // get p
+		len = SendKP(param.kp * 1000);
+		break;
+	case 'I': // set I
+		param.ki = msg->numeric / 1000;
+		break;
+	case 'i': // get i
+		len = SendKI(param.ki * 1000);
+		break;
+	case 'D': // set D
+		param.kd = msg->numeric / 1000;
+		break;
+	case 'd': // get d
+		len = SendKD(param.kd * 1000);
+		break;
+	case 'E': // set encoder val
+		expected_val = (int) truncf(msg->numeric / 1000);
+		break;
+	case 'e': // get encoder val
+		len = SendEncoder(TIM2->CNT*1000);
+		break;
+	}
+
+	// Send any pending message
+	if (len != 0) {
+		CDC_Transmit_FS((uint8_t*)send_buf, len);
+	}
+	msg->processed = true;
+}
 /* USER CODE END 4 */
 
 /**

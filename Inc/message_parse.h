@@ -16,6 +16,7 @@ typedef struct msg {
 	bool isStop; /* True if messes was stop command. */
 	bool isStart; /* True if message was start command. */
 	bool isSave; /* True if message was save command. */
+	bool processed; /* True if the message has already been delt with. */
 } MESSAGE;
 
 /* Since only one message can be processed at a time on an MCU platform

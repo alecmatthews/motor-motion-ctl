@@ -12,7 +12,6 @@
 
 /* global send buffer */
 unsigned char send_buf[SEND_BUF_LEN];
-
 /** Place the correct message in the buffer to send the encoder value.
  * @returns the total length of the message in the buffer.
  */

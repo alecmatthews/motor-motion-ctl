@@ -1,6 +1,6 @@
 #include "message_parse.h"
 
-#define NUMERIC_LENGTH 4
+#define NUMERIC_LENGTH 5
 
 /* -- forward decelerations -- */
 bool HeaderAligned(unsigned char *buf);
@@ -30,6 +30,7 @@ void ParseMessage(unsigned char *buf, unsigned int *len) {
 	current_message.id = *c_byte;
 
 	if (current_message.len == NUMERIC_LENGTH) {
+		c_byte++;
 		current_message.numeric = GetNum(c_byte);
 		return;
 	}
@@ -39,9 +40,13 @@ void ParseMessage(unsigned char *buf, unsigned int *len) {
 	 * R -continue running
 	 * W - save constants to flash
 	 * P - set p constant
+	 * p - request p constant
 	 * I - set i constant
+	 * i - request i constant
 	 * D - set d constant
+	 * d - request d constants
 	 * E - set desired encoder value
+	 * e - request encoder value
 	 */
 	// these messages are the ones without a numeric payload.
 	switch(current_message.id) {
@@ -70,20 +75,20 @@ void ClearMessage() {
 	current_message.isStop = false;
 	current_message.isStart = false;
 	current_message.isSave = false;
+	current_message.processed = false;
 }
 
 long GetNum(unsigned char* buffer) {
 	// this is gonna be a gross mess
-	// we have to change from big endian to little endian
-	unsigned int b0, b1, b2, b3;
+	long ret = 0;
 
-	b0 = (*buffer) >> 24;
+	ret |= (*buffer) << 24;
 	buffer++;
-	b1 = (*buffer) >> 8;
+	ret |= (*buffer) << 16;
 	buffer++;
-	b2 = (*buffer) << 8;
+	ret |= (*buffer) << 8;
 	buffer++;
-	b3 = (*buffer) << 24;
+	ret |= (*buffer);
 
-	return (b0 | b1 | b2 | b3);
+	return ret;
 }
